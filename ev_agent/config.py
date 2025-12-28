@@ -13,6 +13,8 @@ class Settings:
 
     ollama_base_url: str
     ollama_model: str
+    ollama_model_general: str
+    ollama_model_coder: str
 
     anthropic_api_key: str | None
     anthropic_model: str
@@ -22,6 +24,8 @@ class Settings:
 
     max_iters: int
     workdir: Path
+    fault_inject: bool
+    log_dir: Path
 
 
 def load_settings() -> Settings:
@@ -38,6 +42,8 @@ def load_settings() -> Settings:
 
     ollama_base_url = getenv("EV_OLLAMA_BASE_URL", "http://localhost:11434") or ""
     ollama_model = getenv("EV_OLLAMA_MODEL", "deepseek-r1:latest") or ""
+    ollama_model_general = getenv("EV_OLLAMA_MODEL_GENERAL", ollama_model) or ollama_model
+    ollama_model_coder = getenv("EV_OLLAMA_MODEL_CODER", ollama_model) or ollama_model
 
     anthropic_api_key = getenv("ANTHROPIC_API_KEY", None)
     anthropic_model = getenv("EV_ANTHROPIC_MODEL", "claude-3-5-sonnet-latest") or ""
@@ -47,17 +53,23 @@ def load_settings() -> Settings:
 
     max_iters = int(getenv("EV_MAX_ITERS", "3") or "3")
     workdir = Path(getenv("EV_WORKDIR", "game") or "game").resolve()
+    fault_inject = (getenv("EV_FAULT_INJECT", "0") or "0").strip().lower() in {"1", "true", "yes", "y"}
+    log_dir = Path(getenv("EV_LOG_DIR", "logs") or "logs").resolve()
 
     return Settings(
         llm_backend=llm_backend,
         ollama_base_url=ollama_base_url,
         ollama_model=ollama_model,
+        ollama_model_general=ollama_model_general,
+        ollama_model_coder=ollama_model_coder,
         anthropic_api_key=anthropic_api_key,
         anthropic_model=anthropic_model,
         openai_api_key=openai_api_key,
         openai_model=openai_model,
         max_iters=max_iters,
         workdir=workdir,
+        fault_inject=fault_inject,
+        log_dir=log_dir,
     )
 
 

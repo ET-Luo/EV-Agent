@@ -6,15 +6,15 @@ from ev_agent.agents.nodes import architect_node, coder_node, pm_node, qa_node, 
 from ev_agent.schema import TeamState
 
 
-def build_team_graph(*, llm, workdir, max_iters: int):
+def build_team_graph(*, llm_general, llm_coder, workdir, max_iters: int, fault_inject: bool = False):
     graph = StateGraph(TeamState)
 
     # Wrap nodes to inject deps
-    graph.add_node("pm", lambda s: pm_node(s, llm))
-    graph.add_node("architect", lambda s: architect_node(s, llm))
-    graph.add_node("coder", lambda s: coder_node(s, llm, workdir=workdir))
-    graph.add_node("qa", lambda s: qa_node(s, workdir=workdir))
-    graph.add_node("reviewer", lambda s: reviewer_node(s, llm))
+    graph.add_node("pm", lambda s: pm_node(s, llm_general))
+    graph.add_node("architect", lambda s: architect_node(s, llm_general))
+    graph.add_node("coder", lambda s: coder_node(s, llm_coder, workdir=workdir))
+    graph.add_node("qa", lambda s: qa_node(s, workdir=workdir, fault_inject=fault_inject))
+    graph.add_node("reviewer", lambda s: reviewer_node(s, llm_general, workdir=workdir))
 
     graph.set_entry_point("pm")
     graph.add_edge("pm", "architect")

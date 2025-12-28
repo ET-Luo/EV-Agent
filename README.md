@@ -27,6 +27,20 @@ pip install -r requirements.txt
 python -m ev_agent.run "写一个 pygame 贪吃蛇小游戏，支持方向键控制，撞墙/撞到自己则游戏结束。"
 ```
 
+## 可视化面板（Streamlit）
+
+运行面板：
+
+```bash
+streamlit run ev_agent/ui/streamlit_app.py
+```
+
+再启动一次 Agent（它会把过程写入 `logs/run_*.jsonl`，面板会自动刷新展示 trace / QA 报错 / 文件树）：
+
+```bash
+python -m ev_agent.run "Build a minimal pygame snake game"
+```
+
 ## 目录结构（将逐步完善）
 
 - `ev_agent/`: 主包（配置、LLM 适配、LangGraph 编排、agents）

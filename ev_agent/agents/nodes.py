@@ -7,6 +7,7 @@ from rich.console import Console
 from ev_agent.llm import ChatMessage, LLMClient
 from ev_agent.llm.mock import MockLLM
 from ev_agent.schema import CoderOutput, TeamState
+from ev_agent.utils.code_digest import build_code_digest, format_code_digest
 from ev_agent.utils.exec import run_compileall
 from ev_agent.utils.files import write_code_files
 from ev_agent.utils.json_extract import extract_first_json_object
@@ -110,9 +111,20 @@ def coder_node(state: TeamState, llm: LLMClient, *, workdir) -> TeamState:
     try:
         obj = extract_first_json_object(out)
         parsed = CoderOutput.model_validate(obj)
-        code_files = {f.path: f.content for f in parsed.files}
+        code_files: dict[str, str] = {}
+        for f in parsed.files:
+            path = f.path.strip().replace("\\", "/")
+            # Be tolerant: some models output paths like "game/main.py"
+            if path.lower().startswith("game/"):
+                path = path[5:]
+            if path.startswith("/"):
+                path = path[1:]
+            if not path:
+                continue
+            code_files[path] = f.content
+
         if "main.py" not in code_files:
-            raise ValueError("缺少必需文件：main.py")
+            raise ValueError("缺少必需文件：main.py（注意 path 应该是 workdir 内的相对路径，例如 main.py，而不是 game/main.py）")
 
         state.code_files = code_files
         write_code_files(workdir, state.code_files)
@@ -125,11 +137,22 @@ def coder_node(state: TeamState, llm: LLMClient, *, workdir) -> TeamState:
         return _log(state, "coder", "Coder output invalid; will retry")
 
 
-def qa_node(state: TeamState, *, workdir) -> TeamState:
+def qa_node(state: TeamState, *, workdir, fault_inject: bool = False) -> TeamState:
     state = _ensure_state(state)
     # If coder already produced a parse/protocol error, short-circuit QA as failure.
     if state.error_log.startswith("CODER_OUTPUT_PARSE_ERROR"):
         return _log(state, "qa", "Coder output invalid (parse/protocol).")
+
+    if fault_inject and not state.fault_injected:
+        # Deterministic way to verify self-correction loop:
+        # make the first QA run fail with a syntax error, then ensure coder fixes it.
+        main_py = workdir / "main.py"
+        if main_py.exists():
+            original = main_py.read_text(encoding="utf-8")
+            injected = original + "\n\n# EV_FAULT_INJECT\n\ndef broken(:\n    pass\n"
+            main_py.write_text(injected, encoding="utf-8", newline="\n")
+            state.fault_injected = True
+            _log(state, "qa", "Fault injected into main.py (intentional).")
     res = run_compileall(workdir)
     state.qa_report = f"returncode={res.returncode}\nstdout:\n{res.stdout}\nstderr:\n{res.stderr}"
     if res.returncode != 0:
@@ -139,16 +162,32 @@ def qa_node(state: TeamState, *, workdir) -> TeamState:
     return _log(state, "qa", "Compileall passed")
 
 
-def reviewer_node(state: TeamState, llm: LLMClient) -> TeamState:
+def reviewer_node(state: TeamState, llm: LLMClient, *, workdir) -> TeamState:
     state = _ensure_state(state)
     if isinstance(llm, MockLLM):
         state.review_notes = "Mock review：建议后续加入单元测试与配置化参数（格子大小、帧率）。"
         return _log(state, "reviewer", "Mock review ready")
 
+    rel_paths = list(state.code_files.keys())
+    digests = build_code_digest(workdir, rel_paths)
+    digest_text = format_code_digest(digests)
+
     out = llm.chat(
         [
             ChatMessage("system", REVIEW_SYSTEM),
-            ChatMessage("user", f"请审计这些文件：\n{list(state.code_files.keys())}\n\n给出改进建议。"),
+            ChatMessage(
+                "user",
+                "你将收到完整的“代码摘要/关键片段”（可能含截断）。你【禁止】回复“未提供代码/请粘贴代码”。\n\n"
+                "请审计以下内容，并给出改进建议：\n\n"
+                "```text\n"
+                f"{digest_text}\n"
+                "```\n\n"
+                "输出格式（必须遵守）：\n"
+                "1) 高优先级问题（含原因与修复建议）\n"
+                "2) 中优先级问题\n"
+                "3) 低优先级/可选优化\n"
+                "4) 如果信息仍不足：列出“最小补充信息清单”（具体到文件/函数/位置）",
+            ),
         ]
     )
     state.review_notes = out.strip()

@@ -24,6 +24,7 @@ class TeamState(BaseModel):
     # Control / routing
     iteration: int = 0
     next_node: str = "pm"
+    fault_injected: bool = False
 
     # Observability
     trace: list[dict[str, Any]] = Field(default_factory=list)  # simple structured log

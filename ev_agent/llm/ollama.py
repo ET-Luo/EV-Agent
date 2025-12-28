@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import httpx
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from .base import ChatMessage
 
@@ -11,6 +12,12 @@ class OllamaLLM:
         self.model = model
         self.timeout_s = timeout_s
 
+    @retry(
+        reraise=True,
+        stop=stop_after_attempt(4),
+        wait=wait_exponential(multiplier=0.6, min=0.6, max=6),
+        retry=retry_if_exception_type(httpx.HTTPError),
+    )
     def chat(self, messages: list[ChatMessage], *, temperature: float = 0.2) -> str:
         payload = {
             "model": self.model,

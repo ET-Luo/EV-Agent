@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import asdict
 from datetime import datetime
 
 from rich.console import Console
 
 from ev_agent.llm import ChatMessage, LLMClient
 from ev_agent.llm.mock import MockLLM
-from ev_agent.schema import TeamState
+from ev_agent.schema import CoderOutput, TeamState
 from ev_agent.utils.exec import run_compileall
 from ev_agent.utils.files import write_code_files
+from ev_agent.utils.json_extract import extract_first_json_object
 
 from .prompts import ARCH_SYSTEM, CODER_SYSTEM, PM_SYSTEM, QA_SYSTEM, REVIEW_SYSTEM
 
@@ -107,16 +107,29 @@ def coder_node(state: TeamState, llm: LLMClient, *, workdir) -> TeamState:
     )
     out = llm.chat([ChatMessage("system", CODER_SYSTEM), ChatMessage("user", prompt)])
 
-    # Best-effort parse JSON, fallback to single-file.
-    files = _best_effort_files_from_json(out)
-    state.code_files = {f["path"]: f["content"] for f in files}
-    write_code_files(workdir, state.code_files)
-    state.error_log = ""
-    return _log(state, "coder", f"Code written: {len(state.code_files)} files")
+    try:
+        obj = extract_first_json_object(out)
+        parsed = CoderOutput.model_validate(obj)
+        code_files = {f.path: f.content for f in parsed.files}
+        if "main.py" not in code_files:
+            raise ValueError("缺少必需文件：main.py")
+
+        state.code_files = code_files
+        write_code_files(workdir, state.code_files)
+        state.error_log = ""
+        return _log(state, "coder", f"Code written: {len(state.code_files)} files")
+    except Exception as e:
+        # Do not write anything. Turn this into an error so QA routes back to coder.
+        state.error_log = f"CODER_OUTPUT_PARSE_ERROR: {type(e).__name__}: {e}\nRawOutput:\n{out[:2000]}"
+        state.qa_report = state.error_log
+        return _log(state, "coder", "Coder output invalid; will retry")
 
 
 def qa_node(state: TeamState, *, workdir) -> TeamState:
     state = _ensure_state(state)
+    # If coder already produced a parse/protocol error, short-circuit QA as failure.
+    if state.error_log.startswith("CODER_OUTPUT_PARSE_ERROR"):
+        return _log(state, "qa", "Coder output invalid (parse/protocol).")
     res = run_compileall(workdir)
     state.qa_report = f"returncode={res.returncode}\nstdout:\n{res.stdout}\nstderr:\n{res.stderr}"
     if res.returncode != 0:
@@ -140,27 +153,6 @@ def reviewer_node(state: TeamState, llm: LLMClient) -> TeamState:
     )
     state.review_notes = out.strip()
     return _log(state, "reviewer", "Review notes generated")
-
-
-def _best_effort_files_from_json(text: str) -> list[dict[str, str]]:
-    import json
-    import re
-
-    m = re.search(r"\{[\s\S]*\}", text)
-    if not m:
-        return [{"path": "main.py", "content": text}]
-    try:
-        obj = json.loads(m.group(0))
-        files = obj.get("files") or []
-        out: list[dict[str, str]] = []
-        for f in files:
-            path = (f or {}).get("path")
-            content = (f or {}).get("content")
-            if isinstance(path, str) and isinstance(content, str):
-                out.append({"path": path, "content": content})
-        return out or [{"path": "main.py", "content": text}]
-    except Exception:
-        return [{"path": "main.py", "content": text}]
 
 
 def _mock_snake_project() -> dict[str, str]:

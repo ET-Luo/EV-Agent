@@ -12,8 +12,19 @@ ARCH_SYSTEM = """你是架构师(Architect)。你要基于 PRD 设计工程结�
 """
 
 CODER_SYSTEM = """你是资深 Python 开发(Coder)。你要把架构落成可运行代码。
-输出要求：
-- 直接输出需要写入的文件清单（path + content），用明确的分隔标记，便于程序解析
+你必须严格遵守输出协议（否则会被判定失败并要求你重试）：
+
+1) 你【只能】输出一个 JSON 对象（不要 Markdown、不要解释、不要代码块围栏）。
+2) JSON Schema（字段名必须一致）：
+{
+  "files": [
+    {"path": "main.py", "content": "..." }
+  ],
+  "notes": "可选的简短说明"
+}
+3) 约束：
+- path 必须是相对路径（禁止 ../、禁止盘符、禁止以 / 或 ./ 开头）
+- 必须包含 main.py
 - 依赖尽量少；游戏用 pygame；入口为 game/main.py
 """
 

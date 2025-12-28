@@ -1,0 +1,13 @@
+[project]
+name = "ev-agent"
+version = "0.1.0"
+description = "A LangGraph-based multi-agent team that can build a small game/app end-to-end."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+

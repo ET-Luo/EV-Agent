@@ -53,10 +53,17 @@ def main() -> int:
     do_log = not bool(args.no_log)
     run_id = make_run_id()
     log_paths = init_run_log(settings.log_dir, run_id)
+    prev_fp = {}
 
     state = TeamState(user_goal=args.goal)
     if do_log:
-        append_snapshot(log_paths, state, extra={"event": "start", "workdir": str(settings.workdir)})
+        prev_fp = append_snapshot(
+            log_paths,
+            state,
+            workdir=settings.workdir,
+            prev_fingerprints=prev_fp,
+            extra={"event": "start", "workdir": str(settings.workdir)},
+        )
 
     # Prefer streaming so UI can update in real time.
     final_state: TeamState
@@ -66,18 +73,36 @@ def main() -> int:
             last = step
             s = TeamState.model_validate(step)
             if do_log:
-                append_snapshot(log_paths, s, extra={"event": "step"})
+                prev_fp = append_snapshot(
+                    log_paths,
+                    s,
+                    workdir=settings.workdir,
+                    prev_fingerprints=prev_fp,
+                    extra={"event": "step"},
+                )
         if last is None:
             last = graph.invoke(state)
         final_state = TeamState.model_validate(last)
     except Exception:
         tb = traceback.format_exc()
         if do_log:
-            append_snapshot(log_paths, state, extra={"event": "exception", "traceback": tb})
+            append_snapshot(
+                log_paths,
+                state,
+                workdir=settings.workdir,
+                prev_fingerprints=prev_fp,
+                extra={"event": "exception", "traceback": tb},
+            )
         raise
 
     if do_log:
-        append_snapshot(log_paths, final_state, extra={"event": "final"})
+        append_snapshot(
+            log_paths,
+            final_state,
+            workdir=settings.workdir,
+            prev_fingerprints=prev_fp,
+            extra={"event": "final"},
+        )
 
     console.rule("EV-Agent Result")
     console.print(f"[bold]workdir[/bold]: {settings.workdir}")

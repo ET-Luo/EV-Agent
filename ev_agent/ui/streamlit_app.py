@@ -93,6 +93,23 @@ with tabs[0]:
     trace = state.get("trace") or []
     st.subheader("Trace（最近）")
     st.dataframe(trace[-200:], use_container_width=True)
+    st.subheader("每一步文件变更摘要（added / modified / removed）")
+    rows = []
+    for e in events:
+        ch = e.get("workdir_changes") or {}
+        last_trace = e.get("last_trace") or {}
+        rows.append(
+            {
+                "ts": e.get("ts"),
+                "event": e.get("event"),
+                "node": last_trace.get("node"),
+                "message": last_trace.get("message"),
+                "added": len(ch.get("added") or []),
+                "modified": len(ch.get("modified") or []),
+                "removed": len(ch.get("removed") or []),
+            }
+        )
+    st.dataframe(rows[-300:], use_container_width=True)
 
 with tabs[1]:
     st.subheader("QA 报告 / 报错")
@@ -119,6 +136,21 @@ with tabs[2]:
             except Exception as e:
                 content = f"<read error: {e}>"
             st.code(content, language="python" if picked.endswith(".py") else None)
+
+    st.subheader("当前 workdir 文件哈希（最新 snapshot）")
+    fps = latest.get("workdir_fingerprints") or {}
+    if not fps:
+        st.info("暂无 workdir_fingerprints（请用最新版本运行一次 ev_agent.run）。")
+    else:
+        fp_rows = [{"path": k, "size": v.get("size"), "sha256": v.get("sha256")} for k, v in fps.items()]
+        st.dataframe(fp_rows, use_container_width=True, height=260)
+
+    st.subheader("当前 snapshot 变更详情（文件列表）")
+    ch = latest.get("workdir_changes") or {}
+    c1, c2, c3 = st.columns(3)
+    c1.text_area("added", value="\n".join(ch.get("added") or []), height=160)
+    c2.text_area("modified", value="\n".join(ch.get("modified") or []), height=160)
+    c3.text_area("removed", value="\n".join(ch.get("removed") or []), height=160)
 
 with tabs[3]:
     st.subheader("Reviewer 输出")
